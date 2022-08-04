@@ -47,7 +47,7 @@ class Takeaway
 
   def menu
     # if no dishes are in menu, returns empty list
-    # otherwise returns a list of dishes on the menu
+    # otherwise returns a list of Dish instances
   end
 
   def select_dish(dish) # dish is an instance of Dish
@@ -64,17 +64,17 @@ class Takeaway
 
   def basket
     # if no dishes have been added, returns empty list
-    # otherwise returns list of selected dishes
+    # otherwise returns list of selected Dish instances
   end
 
   def receipt
     # if basket is empty, returns empty string
-    # otherwise returns string of itemised receipt of dishes in basket
+    # otherwise returns string of itemised receipt of Dish instance titles and prices in basket
   end
 
   def order
     # fails if basket is empty
-    # otherwise sends SMS with twilio to customer confirming order
+    # otherwise sends SMS to customer confirming order through SendSMS class
     # returns string "Thank you for ordering!"
   end
 end
@@ -95,6 +95,22 @@ class Menu
   end
 end
 
+class SendSMS
+  def initialize
+    # ...
+  end
+  
+  def send(total)
+    # sends the customer an SMS with twilio confirming order
+  end
+
+  private
+
+  def twilio(message)
+    # contains the code running twilio
+  end
+end
+  
 Dish = Struct.new(:name, :price)
 ```
 
@@ -105,30 +121,30 @@ combinations that reflect the ways in which the system will be used._
 
 ```ruby
 # menu returns empty list if nothing added
-takeaway = Takeaway.new
 menu = menu.new
+takeaway = Takeaway.new(menu)
 expect(takeaway.menu).to eq []
 
 # adds to menu
-takeaway = Takeaway.new
 menu = Menu.new
+takeaway = Takeaway.new(menu)
 dish_1 = Dish.new("Fries", 4.0)
 dish_2 = Dish.new("Chicken satay", 8.99)
 dish_3 = Dish.new("Steak", 19.99)
 menu.add(dish_1)
 menu.add(dish_2)
 menu.add(dish_3)
-expect(takeaway.menu).to eq [dish_1, dish_2, dish_3]
+expect(takeaway.menu(menu)).to eq [dish_1, dish_2, dish_3]
 
 # fails if selected dish not on menu
-takeaway = Takeaway.new
 menu = Menu.new
+takeaway = Takeaway.new(menu)
 dish_1 = Dish.new("Fries", 4.0)
 expect { takeaway.select_dish(dish_1) }.to raise_error "Dish not on menu"
 
 # selects dishes and adds to basket
-takeaway = Takeaway.new
 menu = Menu.new
+takeaway = Takeaway.new(menu)
 dish_1 = Dish.new("Fries", 4.0)
 dish_2 = Dish.new("Chicken satay", 8.99)
 dish_3 = Dish.new("Steak", 19.99)
@@ -141,8 +157,8 @@ takeaway.select_dish(dish_3)
 expect(takeaway.basket).to eq [dish_1, dish_2, dish_3]
 
 # deselects dishes and removes from basket
-takeaway = Takeaway.new
 menu = Menu.new
+takeaway = Takeaway.new(menu)
 dish_1 = Dish.new("Fries", 4.0)
 dish_2 = Dish.new("Chicken satay", 8.99)
 dish_3 = Dish.new("Steak", 19.99)
@@ -156,22 +172,27 @@ expect(takeaway.basket) to eq [dish_1, dish_2, dish_3]
 takeaway.deselect_dish(dish_2)
 expect(takeaway.basket).to eq [dish_1, dish_3]
 
-# deselect fails if dish not in basket
-takeaway = Takeaway.new
+# deselect fails if deselected dish not in menu
 menu = Menu.new
+takeaway = Takeaway.new(menu)
+dish_1 = Dish.new("Fries", 4.0)
+expect { takeaway.deselect_dish(dish_1) }.to raise_error "Dish not on menu"
+
+# deselect fails if dish not in basket
+menu = Menu.new
+takeaway = Takeaway.new(menu)
 dish_1 = Dish.new("Fries", 4.0)
 menu.add(dish_1)
 expect { takeaway.deselect_dish(dish_1) }.to raise_error "Dish not in bakset"
 
-# deselect fails if deselected dish not in menu
-takeaway = Takeaway.new
+# receipt returns empty string if nothing added
 menu = Menu.new
-dish_1 = Dish.new("Fries", 4.0)
-expect { takeaway.deselect_dish(dish_1) }.to raise_error "Dish not on menu"
+takeaway = Takeaway.new(menu)
+expect(takeaway.receipt).to eq ""
 
 # returns itemised receipt
-takeaway = Takeaway.new
 menu = Menu.new
+takeaway = Takeaway.new(menu)
 dish_1 = Dish.new("Fries", 4.0)
 dish_2 = Dish.new("Chicken satay", 8.99)
 dish_3 = Dish.new("Steak", 19.99)
@@ -183,9 +204,17 @@ takeaway.select_dish(dish_2)
 takeaway.select_dish(dish_3)
 expect(takeaway.receipt).to eq "Fries: £4.00, Chicken satay: £8.99, Steak: £19.99, TOTAL: £32.98"
 
-# order sends the customer an SMS and returns a confirmation string
-takeaway = Takeaway.new
+# order fails if basket is empty
+send_sms = SendSMS.new(double :client)
 menu = Menu.new
+takeaway = Takeaway.new(menu)
+expect { takeaway.order(send_sms) }.to raise_error "Cannot order when basket is empty"
+
+# order sends the customer an SMS and returns a confirmation string
+client = double :client, messages: (double :Messages)
+menu = Menu.new
+takeaway = Takeaway.new(menu)
+send_sms = SendSMS.new(client)
 dish_1 = Dish.new("Fries", 4.0)
 dish_2 = Dish.new("Chicken satay", 8.99)
 dish_3 = Dish.new("Steak", 19.99)
@@ -195,8 +224,39 @@ menu.add(dish_3)
 takeaway.select_dish(dish_1)
 takeaway.select_dish(dish_2)
 takeaway.select_dish(dish_3)
+body_str = "Thank you for ordering! Your order comes to £32.98 and will be with you by 21:00."
+allow(client.messages).to receive(:create).with(
+  body: body_str,
+  from: ENV['TWILIO_FROM'],
+  to: ENV['TWILIO_TO']
+).and_return(double :MessageInstanceMock, sid: "SMa10178e5f2a6457fbcfc37e652053b30")
+confirmation_str = " You should receive an SMS with order details in the next few minutes."
+time = Time.new(2022, 1, 8, 20, 20, 0)
+expect(takeaway.order(send_sms, time)).to eq body_str + confirmation_str
 
-
+# order gives alternative message if SMS fails
+client = double :client, messages: (double :Messages)
+menu = Menu.new
+takeaway = Takeaway.new(menu)
+send_sms = SendSMS.new(client)
+dish_1 = Dish.new("Fries", 4.0)
+dish_2 = Dish.new("Chicken satay", 8.99)
+dish_3 = Dish.new("Steak", 19.99)
+menu.add(dish_1)
+menu.add(dish_2)
+menu.add(dish_3)
+takeaway.select_dish(dish_1)
+takeaway.select_dish(dish_2)
+takeaway.select_dish(dish_3)
+body_str = "Thank you for ordering! Your order comes to £32.98 and will be with you by 21:00."
+allow(client.messages).to receive(:create).with(
+  body:body_str,
+  from: ENV['TWILIO_FROM'],
+  to: ENV['TWILIO_TO']
+).and_return(double :MessageInstanceMock)
+fail_str =  " There has been an issue sending you a confirmation SMS."
+time = Time.new(2022, 1, 8, 20, 20, 0)
+expect(takeaway.order(send_sms, time)).to eq body_str + fail_str
 ```
 
 ## 4. Create Examples as Unit Tests
@@ -207,14 +267,14 @@ a more granular level of detail._
 ```ruby
 # Takeaway
 # menu returns empty list if nothing added
-takeaway = Takeaway.new
 menu = double :Menu
+takeaway = Takeaway.new(menu)
 expect(menu).to receive(:all).and_return([])
 expect(takeaway.menu).to eq []
 
 # adds to menu
-takeaway = Takeaway.new
 menu = double :Menu
+takeaway = Takeaway.new(menu)
 dish_1 = double :Dish, name: "Fries", price: 4.0
 dish_2 = double :Dish, name: "Chicken satay", price: 8.99
 dish_3 = double :Dish, name: "Steak", price: 19.99
@@ -222,72 +282,117 @@ expect(menu).to receive(:all).and_return([dish_1, dish_2, dish_3])
 expect(takeaway.menu).to eq [dish_1, dish_2, dish_3]
 
 # basket returns empty list if nothing added
-takeaway = Takeaway.new
+takeaway = Takeaway.new(double :Menu)
 expect(takeaway.basket).to eq []
 
 # selects dishes and adds to basket
-takeaway = Takeaway.new
 menu = double :Menu
+takeaway = Takeaway.new(menu)
 dish_1 = double :Dish, name: "Fries", price: 4.0
 dish_2 = double :Dish, name: "Chicken satay", price: 8.99
 dish_3 = double :Dish, name: "Steak", price: 19.99
-expect(menu).to receive(:all).and_return([dish_1, dish_2, dish_3])
+allow(menu).to receive(:all).and_return([dish_1, dish_2, dish_3])
 takeaway.select_dish(dish_1)
 takeaway.select_dish(dish_2)
 takeaway.select_dish(dish_3)
 expect(takeaway.basket).to eq [dish_1, dish_2, dish_3]
 
 # fails if selected dish not on menu
-takeaway = Takeaway.new
 menu = double :Menu
+takeaway = Takeaway.new(menu)
 dish_1 = double :Dish, name: "Fries", price: 4.0
+dish_2 = double :Dish, name: "Chicken satay", price: 8.99
+allow(menu).to receive(:all).and_return([dish_2])
 expect { takeaway.select_dish(dish_1) }.to raise_error "Dish not on menu"
 
 # deselects dishes and removes from basket
-takeaway = Takeaway.new
 menu = double :Menu
+takeaway = Takeaway.new(menu)
 dish_1 = double :Dish, name: "Fries", price: 4.0
 dish_2 = double :Dish, name: "Chicken satay", price: 8.99
 dish_3 = double :Dish, name: "Steak", price: 19.99
-expect(menu).to receive(:all).and_return([dish_1, dish_2, dish_3])
+allow(menu).to receive(:all).and_return([dish_1, dish_2, dish_3])
 takeaway.select_dish(dish_1)
 takeaway.select_dish(dish_2)
 takeaway.select_dish(dish_3)
-expect(takeaway.basket).to eq [dish_2, dish_3]
+expect(takeaway.basket).to eq [dish_1, dish_2, dish_3]
 takeaway.deselect_dish(dish_2)
-expect(takeaway.basket).to eq [dish_3]
-
-# deselect fails if dish not in basket
-takeaway = Takeaway.new
-menu = double :Menu
-dish_1 = double :Dish, name: "Fries", price: 4.0
-allow(menu).to receive(:all).and_return([dish_1])
-expect { takeaway.deselect_dish(dish_1) }.to raise_error "Dish not in bakset"
+expect(takeaway.basket).to eq [dish_1,dish_3]
 
 # deselect fails if dish not on menu
-takeaway = Takeaway.new
 menu = double :Menu
+takeaway = Takeaway.new(menu)
 dish_1 = double :Dish, name: "Fries", price: 4.0
 allow(menu).to receive(:all).and_return([])
 expect { takeaway.deselect_dish(dish_1) }.to raise_error "Dish not on menu"
 
+# deselect fails if dish not in basket
+menu = double :Menu
+takeaway = Takeaway.new(menu)
+dish_1 = double :Dish, name: "Fries", price: 4.0
+allow(menu).to receive(:all).and_return([dish_1])
+expect { takeaway.deselect_dish(dish_1) }.to raise_error "Dish not in basket"
+
 # receipt returns empty string if nothing added
-takeaway = Takeaway.new
+takeaway = Takeaway.new(double :Menu)
 expect(takeaway.receipt).to eq ""
 
 # returns itemised receipt
-takeaway = Takeaway.new
 menu = double :Menu
+takeaway = Takeaway.new(menu)
 dish_1 = double :Dish, name: "Fries", price: 4.0
 dish_2 = double :Dish, name: "Chicken satay", price: 8.99
 dish_3 = double :Dish, name: "Steak", price: 19.99
+allow(menu).to receive(:all).and_return([dish_1, dish_2, dish_3])
+takeaway.select_dish(dish_1)
 takeaway.select_dish(dish_2)
 takeaway.select_dish(dish_3)
-takeaway.receipt # => "Chicken satay: £8.99, Steak: £19.99, TOTAL: £28.98"
+receipt_str = "Fries: £4.00, Chicken satay: £8.99, Steak: £19.99, TOTAL: £32.98"
+expect(takeaway.receipt).to eq receipt_str
 
 # order fails if basket is empty
-takeaway = Takeaway.new
-expect { takeaway.order }.to raise_error "Cannot order when basket is empty"
+send_sms = double :SendSMS
+menu = double :Menu
+takeaway = Takeaway.new(menu)
+expect { takeaway.order(send_sms) }.to raise_error "Cannot order when basket is empty"
+
+# order sends the customer an SMS and returns a confirmation string
+menu = double :Menu
+takeaway = Takeaway.new(menu)
+send_sms = double :SendSMS
+dish_1 = double :Dish, name: "Fries", price: 4.0
+dish_2 = double :Dish, name: "Chicken satay", price: 8.99
+dish_3 = double :Dish, name: "Steak", price: 19.99
+allow(menu).to receive(:all).and_return([dish_1, dish_2, dish_3])
+takeaway.select_dish(dish_1)
+takeaway.select_dish(dish_2)
+takeaway.select_dish(dish_3)
+order_str = "Thank you for ordering! Your order comes to £32.98 and will be with you by 21:00."
+expect(send_sms).to receive(:send)
+  .with(order_str)
+  .and_return(true)
+time = Time.new(2022, 1, 8, 20, 20, 0)
+confirmation_str = " You should receive an SMS with order details in the next few minutes."
+expect(takeaway.order(send_sms, time)).to eq order_str + confirmation_str
+
+# order fails to send the customer an SMS
+menu = double :Menu
+takeaway = Takeaway.new(menu)
+send_sms = double :SendSMS
+dish_1 = double :Dish, name: "Fries", price: 4.0
+dish_2 = double :Dish, name: "Chicken satay", price: 8.99
+dish_3 = double :Dish, name: "Steak", price: 19.99
+allow(menu).to receive(:all).and_return([dish_1, dish_2, dish_3])
+takeaway.select_dish(dish_1)
+takeaway.select_dish(dish_2)
+takeaway.select_dish(dish_3)
+order_str = "Thank you for ordering! Your order comes to £32.98 and will be with you by 21:00."
+expect(send_sms).to receive(:send)
+.with(order_str)
+.and_return(false)
+time = Time.new(2022, 1, 8, 20, 20, 0)
+fail_str = " There has been an issue sending you a confirmation SMS."
+expect(takeaway.order(send_sms, time)).to eq order_str + fail_str
 
 -----
 
@@ -304,17 +409,39 @@ dish_3 = double :Dish, name: "Steak", price: 19.99
 menu.add(dish_1)
 menu.add(dish_2)
 menu.add(dish_3)
-emenu.all # => [dish_1, dish_2, dish_3]
+expect(menu.all).to eq [dish_1, dish_2, dish_3]
 
 -----
 
 # Dish
 # constructs
-dish = dish.new("Fries", 3.5)
-dish.name # => "Fries"
-dish.price # => 4.0
+dish = Dish.new('Fries', 4.0)
+expect(dish.name).to eq 'Fries'
+expect(dish.price).to eq 4.0
 
-#
+-----
+
+# SendSMS
+# returns true when an SMS is sent
+client = double :client, messages: (double :Messages)
+allow(client.messages).to receive(:create).with(
+  body: "test message",
+  from: ENV['TWILIO_FROM'],
+  to: ENV['TWILIO_TO']
+).and_return(double :MessageInstanceMock, sid: "SMa10178e5f2a6457fbcfc37e652053b30")
+send_sms = SendSMS.new(client)
+expect(send_sms.send("test message")).to eq true
+
+# returns false when there is a problem sending.
+client = double :client, messages: (double :Messages)
+allow(client.messages).to receive(:create).with(
+  body: "test message",
+  from: ENV['TWILIO_FROM'],
+  to: ENV['TWILIO_TO']
+).and_return(double :MessageInstanceMock)
+send_sms = SendSMS.new(client)
+expect(send_sms.send("test message")).to eq false
+
 ```
 
 _Encode each example as a test. You can add to the above list as you go._
