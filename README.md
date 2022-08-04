@@ -8,6 +8,9 @@ Order times are set to 40 minutes, which can be changed in the Takeaway.arrival_
 To order with Twilio environment variables must be set for the following variables:
 
 ENV['TWILIO_ACCOUNT_SID'] = Your Twilio account SID
+
 ENV['TWILIO_AUTH_TOKEN'] = Your Twilio authentication
+
 ENV['TWILIO_FROM'] = Your virtual phone number from Twilio
+
 ENV['TWILIO_TO'] = The message recepient's number
